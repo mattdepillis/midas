@@ -6,7 +6,7 @@ def main():
     portfolio = coinbase.get_holdings()
 
     for asset in portfolio:
-        print("\n", f"{asset['symbol']}: {asset['balance']}")
+        print("\n", asset)
 
 if __name__ == "__main__":
     main()

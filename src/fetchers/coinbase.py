@@ -1,10 +1,10 @@
 import os
-from dotenv import load_dotenv # type: ignore
-from coinbase import jwt_generator
-import requests # type: ignore
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
-load_dotenv()
+import requests  # type: ignore
+from coinbase import jwt_generator
+
+from models.portfolio import CoinbasePortfolioAsset
 
 class CoinbaseRequestHandler:
     """Handles authenticated Coinbase API requests to fetch account balances and asset prices."""
@@ -118,11 +118,12 @@ class CoinbaseRequestHandler:
 
         return sorted(portfolio, key=lambda x: x["usd_value"], reverse=True)
 
-    def get_holdings(self) -> List[Dict[str, Any]]:
+    def get_holdings(self) -> List[CoinbasePortfolioAsset]:
         """Main public method to fetch and format portfolio holdings.
 
         Returns:
             A list of enriched holdings, including USD values and staking status.
         """
         all_accounts = self._get_all_accounts()
-        return self._construct_portfolio(all_accounts)
+        raw_assets = self._construct_portfolio(all_accounts)
+        return [CoinbasePortfolioAsset(**asset) for asset in raw_assets]

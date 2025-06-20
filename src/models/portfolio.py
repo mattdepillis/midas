@@ -1,5 +1,7 @@
-from pydantic import BaseModel # type: ignore
 from typing import Optional
+
+from pydantic import BaseModel  # type: ignore
+
 
 class CoinbasePortfolioAsset(BaseModel):
     id: str

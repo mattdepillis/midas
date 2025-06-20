@@ -6,6 +6,7 @@ from coinbase import jwt_generator
 
 from models.portfolio import CoinbasePortfolioAsset
 
+
 class CoinbaseRequestHandler:
     """Handles authenticated Coinbase API requests to fetch account balances and asset prices."""
 
@@ -20,12 +21,12 @@ class CoinbaseRequestHandler:
         # vars - headers
         self.headers = lambda token: {
             "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
 
     @property
     def api_secret(self) -> str:
-        with open(self.key_path, 'r') as f:
+        with open(self.key_path, "r") as f:
             return f.read()
 
     def build_jwt_for(self, path: str, method: str = "GET") -> str:
@@ -40,7 +41,7 @@ class CoinbaseRequestHandler:
         """
         jwt_uri = jwt_generator.format_jwt_uri(method, path)
         return jwt_generator.build_rest_jwt(jwt_uri, self.api_key, self.api_secret)
-    
+
     def _get_all_accounts(self) -> List[Dict[str, Any]]:
         """Fetches all account records from Coinbase v2 API.
 
@@ -52,14 +53,16 @@ class CoinbaseRequestHandler:
         """
         response = requests.get(
             self.base_url + self.accounts_api,
-            headers=self.headers(self.build_jwt_for(self.accounts_api))
+            headers=self.headers(self.build_jwt_for(self.accounts_api)),
         )
 
         if response.status_code != 200:
-            raise Exception(f"Failed to fetch accounts: {response.status_code} {response.text}")
-        
+            raise Exception(
+                f"Failed to fetch accounts: {response.status_code} {response.text}"
+            )
+
         return response.json().get("data", [])
-    
+
     def get_asset_price(self, symbol: str) -> float:
         """Fetches the current USD spot price for a given asset symbol.
 
@@ -71,11 +74,13 @@ class CoinbaseRequestHandler:
         """
         response = requests.get(
             self.base_url + self.assets_api(symbol),
-            headers=self.headers(self.build_jwt_for(self.assets_api(symbol)))
+            headers=self.headers(self.build_jwt_for(self.assets_api(symbol))),
         )
 
         if response.status_code != 200:
-            print(f"Failed to fetch price for {symbol}: {response.status_code}, {response.text}")
+            print(
+                f"Failed to fetch price for {symbol}: {response.status_code}, {response.text}"
+            )
             return 0.0
 
         data = response.json()
@@ -84,9 +89,11 @@ class CoinbaseRequestHandler:
             return float(data["data"]["amount"])
         except (KeyError, TypeError, ValueError):
             print(f"Could not extract price for {symbol}")
-            return 0.0 
-    
-    def _construct_portfolio(self, accounts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+            return 0.0
+
+    def _construct_portfolio(
+        self, accounts: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         """Transforms raw account data into a structured portfolio with price info.
 
         Args:
@@ -105,16 +112,22 @@ class CoinbaseRequestHandler:
                 price = self.get_asset_price(symbol)
                 is_staked = acct["name"].lower().startswith("staked")
 
-                portfolio.append({
-                    "id": acct["id"],
-                    "name": acct["currency"]["name"],
-                    "symbol": symbol,
-                    "balance": balance,
-                    "usd_price": price,
-                    "usd_value": balance * price,
-                    "is_staked": is_staked,
-                    "apy": float(acct["currency"].get("rewards", {}).get("apy", 0)) if is_staked else None
-                })
+                portfolio.append(
+                    {
+                        "id": acct["id"],
+                        "name": acct["currency"]["name"],
+                        "symbol": symbol,
+                        "balance": balance,
+                        "usd_price": price,
+                        "usd_value": balance * price,
+                        "is_staked": is_staked,
+                        "apy": (
+                            float(acct["currency"].get("rewards", {}).get("apy", 0))
+                            if is_staked
+                            else None
+                        ),
+                    }
+                )
 
         return sorted(portfolio, key=lambda x: x["usd_value"], reverse=True)
 

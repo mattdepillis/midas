@@ -75,25 +75,16 @@ class CoinbaseRequestHandler:
         Returns:
             The spot price as a float. Returns 0.0 on failure.
         """
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                self.base_url + self.assets_api(symbol),
-                headers=self.headers(self.build_jwt_for(self.assets_api(symbol))),
-            )
-
-            if response.status_code != 200:
-                print(
-                    f"Failed to fetch price for {symbol}: {response.status_code}, {response.text}"
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(
+                    self.base_url + self.assets_api(symbol),
+                    headers=self.headers(self.build_jwt_for(self.assets_api(symbol))),
                 )
-                return 0.0
-
-            data = response.json()
-
-            try:
-                return float(data["data"]["amount"])
-            except (KeyError, TypeError, ValueError):
-                print(f"Could not extract price for {symbol}")
-                return 0.0
+                return float(response.json()["data"]["amount"])
+        except (httpx.HTTPError, KeyError, TypeError, ValueError):
+            print(f"Could not extract price for {symbol}")
+            return 0.0
 
     async def _construct_portfolio(
         self, accounts: List[Dict[str, Any]]

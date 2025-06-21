@@ -1,7 +1,9 @@
+# import requests  # type: ignore
+import asyncio
 import os
 from typing import Any, Dict, List
 
-import requests  # type: ignore
+import httpx  # type: ignore
 from coinbase import jwt_generator
 
 from models.portfolio import CoinbasePortfolioAsset
@@ -42,8 +44,8 @@ class CoinbaseRequestHandler:
         jwt_uri = jwt_generator.format_jwt_uri(method, path)
         return jwt_generator.build_rest_jwt(jwt_uri, self.api_key, self.api_secret)
 
-    def _get_all_accounts(self) -> List[Dict[str, Any]]:
-        """Fetches all account records from Coinbase v2 API.
+    async def _get_all_accounts(self) -> List[Dict[str, Any]]:
+        """Fetches all account records asynchronously from Coinbase v2 API.
 
         Returns:
             A list of account dictionaries from the /v2/accounts endpoint.
@@ -51,19 +53,20 @@ class CoinbaseRequestHandler:
         Raises:
             Exception: If the API call fails.
         """
-        response = requests.get(
-            self.base_url + self.accounts_api,
-            headers=self.headers(self.build_jwt_for(self.accounts_api)),
-        )
-
-        if response.status_code != 200:
-            raise Exception(
-                f"Failed to fetch accounts: {response.status_code} {response.text}"
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                self.base_url + self.accounts_api,
+                headers=self.headers(self.build_jwt_for(self.accounts_api)),
             )
 
-        return response.json().get("data", [])
+            if response.status_code != 200:
+                raise Exception(
+                    f"Failed to fetch accounts: {response.status_code} {response.text}"
+                )
 
-    def get_asset_price(self, symbol: str) -> float:
+            return response.json().get("data", [])
+
+    async def get_asset_price(self, symbol: str) -> float:
         """Fetches the current USD spot price for a given asset symbol.
 
         Args:
@@ -72,26 +75,27 @@ class CoinbaseRequestHandler:
         Returns:
             The spot price as a float. Returns 0.0 on failure.
         """
-        response = requests.get(
-            self.base_url + self.assets_api(symbol),
-            headers=self.headers(self.build_jwt_for(self.assets_api(symbol))),
-        )
-
-        if response.status_code != 200:
-            print(
-                f"Failed to fetch price for {symbol}: {response.status_code}, {response.text}"
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                self.base_url + self.assets_api(symbol),
+                headers=self.headers(self.build_jwt_for(self.assets_api(symbol))),
             )
-            return 0.0
 
-        data = response.json()
+            if response.status_code != 200:
+                print(
+                    f"Failed to fetch price for {symbol}: {response.status_code}, {response.text}"
+                )
+                return 0.0
 
-        try:
-            return float(data["data"]["amount"])
-        except (KeyError, TypeError, ValueError):
-            print(f"Could not extract price for {symbol}")
-            return 0.0
+            data = response.json()
 
-    def _construct_portfolio(
+            try:
+                return float(data["data"]["amount"])
+            except (KeyError, TypeError, ValueError):
+                print(f"Could not extract price for {symbol}")
+                return 0.0
+
+    async def _construct_portfolio(
         self, accounts: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """Transforms raw account data into a structured portfolio with price info.
@@ -102,41 +106,41 @@ class CoinbaseRequestHandler:
         Returns:
             A list of dictionaries, each representing a portfolio asset.
         """
-        portfolio = []
 
-        for acct in accounts:
+        async def process_account(acct):
             balance = float(acct["balance"]["amount"])
             symbol = acct["currency"]["code"]
+            if balance == 0:
+                return None
 
-            if balance > 0:
-                price = self.get_asset_price(symbol)
-                is_staked = acct["name"].lower().startswith("staked")
+            price = await self.get_asset_price(symbol)
+            is_staked = acct["name"].lower().startswith("staked")
+            return {
+                "id": acct["id"],
+                "name": acct["currency"]["name"],
+                "symbol": symbol,
+                "balance": balance,
+                "usd_price": price,
+                "usd_value": balance * price,
+                "is_staked": is_staked,
+                "apy": (
+                    float(acct["currency"].get("rewards", {}).get("apy", 0))
+                    if is_staked
+                    else None
+                ),
+            }
 
-                portfolio.append(
-                    {
-                        "id": acct["id"],
-                        "name": acct["currency"]["name"],
-                        "symbol": symbol,
-                        "balance": balance,
-                        "usd_price": price,
-                        "usd_value": balance * price,
-                        "is_staked": is_staked,
-                        "apy": (
-                            float(acct["currency"].get("rewards", {}).get("apy", 0))
-                            if is_staked
-                            else None
-                        ),
-                    }
-                )
+        results = await asyncio.gather(*(process_account(acct) for acct in accounts))
+        return sorted(
+            [r for r in results if r], key=lambda x: x["usd_value"], reverse=True
+        )
 
-        return sorted(portfolio, key=lambda x: x["usd_value"], reverse=True)
-
-    def get_holdings(self) -> List[CoinbasePortfolioAsset]:
+    async def get_holdings(self) -> List[CoinbasePortfolioAsset]:
         """Main public method to fetch and format portfolio holdings.
 
         Returns:
             A list of enriched holdings, including USD values and staking status.
         """
-        all_accounts = self._get_all_accounts()
-        raw_assets = self._construct_portfolio(all_accounts)
+        accounts = await self._get_all_accounts()
+        raw_assets = await self._construct_portfolio(accounts)
         return [CoinbasePortfolioAsset(**asset) for asset in raw_assets]

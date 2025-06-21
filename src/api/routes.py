@@ -9,5 +9,5 @@ router = APIRouter()
 
 
 @router.get("/holdings", response_model=List[CoinbasePortfolioAsset])
-def fetch_holdings():
-    return get_portfolio()
+async def fetch_holdings():
+    return await get_portfolio()

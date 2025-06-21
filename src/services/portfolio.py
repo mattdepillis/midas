@@ -1,6 +1,9 @@
+from typing import List
+
 from fetchers.coinbase import CoinbaseRequestHandler
+from models.portfolio import CoinbasePortfolioAsset
 
 
-def get_portfolio():
-    client = CoinbaseRequestHandler()
-    return client.get_holdings()
+async def get_portfolio() -> List[CoinbasePortfolioAsset]:
+    handler = CoinbaseRequestHandler()
+    return await handler.get_holdings()

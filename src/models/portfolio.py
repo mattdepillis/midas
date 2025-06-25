@@ -3,7 +3,7 @@ from typing import Optional
 from pydantic import BaseModel  # type: ignore
 
 
-class CoinbasePortfolioAsset(BaseModel):
+class CryptoAsset(BaseModel):
     id: str
     name: str
     symbol: str
@@ -13,3 +13,5 @@ class CoinbasePortfolioAsset(BaseModel):
     is_staked: bool
     apy: Optional[float] = None
     estimated_annual_yield_usd: Optional[float] = 0
+    # performance_24h: Optional[float] = None  # % change
+    # performance_7d: Optional[float] = None   # % change

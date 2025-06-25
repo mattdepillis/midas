@@ -2,13 +2,13 @@ from typing import List
 
 from fastapi import APIRouter, Query  # type: ignore
 
-from models.portfolio import CoinbasePortfolioAsset
+from models.portfolio import CryptoAsset
 from services.portfolio import get_portfolio
 
 router = APIRouter()
 
 
-@router.get("/holdings", response_model=List[CoinbasePortfolioAsset])
+@router.get("/holdings", response_model=List[CryptoAsset])
 async def fetch_holdings(
     staked_only: bool = Query(False, description="Only return staked assets")
 ):

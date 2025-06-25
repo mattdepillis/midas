@@ -1,4 +1,3 @@
-# import requests  # type: ignore
 import asyncio
 import os
 from typing import Any, Dict, List
@@ -6,7 +5,7 @@ from typing import Any, Dict, List
 import httpx  # type: ignore
 from coinbase import jwt_generator
 
-from models.portfolio import CoinbasePortfolioAsset
+from models.portfolio import CryptoAsset
 
 
 class CoinbaseRequestHandler:
@@ -126,7 +125,7 @@ class CoinbaseRequestHandler:
             [r for r in results if r], key=lambda x: x["usd_value"], reverse=True
         )
 
-    async def get_holdings(self) -> List[CoinbasePortfolioAsset]:
+    async def get_holdings(self) -> List[CryptoAsset]:
         """Main public method to fetch and format portfolio holdings.
 
         Returns:
@@ -134,4 +133,4 @@ class CoinbaseRequestHandler:
         """
         accounts = await self._get_all_accounts()
         raw_assets = await self._construct_portfolio(accounts)
-        return [CoinbasePortfolioAsset(**asset) for asset in raw_assets]
+        return [CryptoAsset(**asset) for asset in raw_assets]

@@ -5,8 +5,6 @@ from typing import Any, Dict, List
 import httpx  # type: ignore
 from coinbase import jwt_generator
 
-from models.portfolio import CryptoAsset
-
 
 class CoinbaseRequestHandler:
     """Handles authenticated Coinbase API requests to fetch account balances and asset prices."""
@@ -125,12 +123,11 @@ class CoinbaseRequestHandler:
             [r for r in results if r], key=lambda x: x["usd_value"], reverse=True
         )
 
-    async def get_holdings(self) -> List[CryptoAsset]:
+    async def get_holdings(self) -> List[Dict[str, Any]]:
         """Main public method to fetch and format portfolio holdings.
 
         Returns:
             A list of enriched holdings, including USD values and staking status.
         """
         accounts = await self._get_all_accounts()
-        raw_assets = await self._construct_portfolio(accounts)
-        return [CryptoAsset(**asset) for asset in raw_assets]
+        return await self._construct_portfolio(accounts)

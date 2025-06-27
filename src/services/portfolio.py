@@ -1,31 +1,39 @@
 from typing import Dict, List
 
+from deps.coingecko import get_coingecko_fetcher, get_symbol_cache
 from fetchers.coinbase import CoinbaseRequestHandler
-from fetchers.coingecko import CoinGeckoFetcher, SymbolCache
+from fetchers.coingecko import SymbolCache
 from models.portfolio import CryptoAsset
-
-# init CoinGecko classes for constant service across multiple portfolio method invocations
 
 
 async def get_portfolio() -> List[CryptoAsset]:
-    """ """
-    cache = SymbolCache()
-    await cache.initialize()
+    """
+    Fetches the user's crypto holdings from Coinbase and enriches them with real-time
+    market metadata from CoinGecko.
+
+    Returns:
+        A list of CryptoAsset objects with both Coinbase and CoinGecko data combined.
+    """
+    cache = await get_symbol_cache()
     handler = CoinbaseRequestHandler()
     holdings = await handler.get_holdings()
     return await enrich_holdings_with_prices(cache, holdings)
 
 
-# --- Function to enrich raw assets --- #
 async def enrich_holdings_with_prices(
-    cache, raw_assets: List[Dict]
+    cache: SymbolCache, raw_assets: List[Dict]
 ) -> List[CryptoAsset]:
-    ids = [
-        cache.get_id(a["symbol"].lower())
-        for a in raw_assets
-        if cache.get_id(a["symbol"].lower())
-    ]
+    """
+    Enriches a list of raw Coinbase assets with additional market metadata
+    (e.g., price changes, market cap, volume, etc.) from CoinGecko.
 
+    Args:
+        cache: A SymbolCache instance used to map symbols to CoinGecko IDs.
+        raw_assets: A list of dicts representing raw asset data from Coinbase.
+
+    Returns:
+        A list of CryptoAsset instances with additional CoinGecko metadata.
+    """
     valid_ids = []
     asset_to_id_map = {}
 
@@ -36,9 +44,8 @@ async def enrich_holdings_with_prices(
             valid_ids.append(cg_id)
             asset_to_id_map[symbol] = cg_id
 
-    coingecko = CoinGeckoFetcher()
-    price_metadata = await coingecko.get_price_metadata(ids)
-    print("PM", price_metadata)
+    coingecko = await get_coingecko_fetcher()
+    price_metadata = await coingecko.get_price_metadata(valid_ids)
 
     enriched_assets = []
     for asset in raw_assets:
@@ -46,23 +53,38 @@ async def enrich_holdings_with_prices(
         cg_id = asset_to_id_map.get(symbol)
         cg_meta = price_metadata.get(cg_id, {})
 
-        # Add fields to asset
-        asset["price_change_24h"] = cg_meta.get("price_change_24h")
-        asset["price_change_percentage_24h"] = cg_meta.get(
-            "price_change_percentage_24h"
-        )
-        asset["price_change_7d"] = cg_meta.get("price_change_7d")
-        asset["price_change_percentage_7d_in_currency"] = cg_meta.get(
-            "price_change_percentage_7d_in_currency"
-        )
-        asset["price_change_percentage_14d_in_currency"] = cg_meta.get(
-            "price_change_percentage_14d_in_currency"
-        )
-        asset["market_cap"] = cg_meta.get("market_cap")
-        asset["image"] = cg_meta.get("image")
-        asset["last_updated"] = cg_meta.get("last_updated")
-
-        print("\n", asset)
+        # --- Add all enriched fields from CoinGecko ---
+        for key in [
+            "image",
+            "market_cap",
+            "market_cap_rank",
+            "fully_diluted_valuation",
+            "total_volume",
+            "high_24h",
+            "low_24h",
+            "price_change_24h",
+            "price_change_percentage_24h",
+            "market_cap_change_24h",
+            "market_cap_change_percentage_24h",
+            "circulating_supply",
+            "total_supply",
+            "max_supply",
+            "ath",
+            "ath_change_percentage",
+            "ath_date",
+            "atl",
+            "atl_change_percentage",
+            "atl_date",
+            "price_change_percentage_7d_in_currency",
+            "price_change_percentage_14d_in_currency",
+            "price_change_percentage_30d_in_currency",
+            "price_change_percentage_200d_in_currency",
+            "price_change_percentage_1y_in_currency",
+            "last_updated",
+        ]:
+            if key in cg_meta:
+                short_key = key.replace("_in_currency", "")
+                asset[short_key] = cg_meta[key]
 
         enriched_assets.append(CryptoAsset(**asset))
 

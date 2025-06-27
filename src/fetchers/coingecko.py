@@ -1,4 +1,3 @@
-import asyncio
 import os
 from typing import Dict, List, Optional
 
@@ -6,7 +5,17 @@ import httpx  # type: ignore
 
 
 class CoinGeckoBaseModel:
-    """ """
+    """
+    Base class for shared CoinGecko configuration, including API key handling,
+    base URL, and request headers.
+
+    Attributes:
+        api_key (str): API key loaded from environment variable.
+        base_url (str): Base URL for the CoinGecko API.
+        coins_market_api (str): Endpoint for querying market data.
+        headers (Dict[str, str]): Common headers used for API requests.
+        page_limit (int): Default pagination size for market requests.
+    """
 
     def __init__(self):
         # vars - apis
@@ -21,7 +30,13 @@ class CoinGeckoBaseModel:
 
 
 class CoinGeckoFetcher(CoinGeckoBaseModel):
-    """ """
+    """
+    Client for querying enriched market metadata (e.g., price changes, market cap)
+    from CoinGecko's /coins/markets endpoint.
+
+    Inherits:
+        CoinGeckoBaseModel: For shared API config and headers.
+    """
 
     def __init__(self):
         super().__init__()
@@ -32,16 +47,23 @@ class CoinGeckoFetcher(CoinGeckoBaseModel):
             "order": "market_cap_desc",
             "per_page": len(coin_ids),
             "page": 1,
-            "price_change_percentage": "24h,7d,14d",
+            "price_change_percentage": "24h,7d,14d,30d,200d,1y",
         }
 
     async def get_price_metadata(self, ids: List[str]) -> Dict[str, float]:
-        """ """
+        """
+        Fetches enriched price and market metadata for a list of CoinGecko coin IDs.
+
+        Args:
+            ids (List[str]): A list of CoinGecko asset IDs (e.g., 'bitcoin', 'ethereum').
+
+        Returns:
+            Dict[str, Dict]: A mapping from coin ID to its market metadata.
+        """
         try:
             id_str = ",".join(ids)
 
             async with httpx.AsyncClient() as client:
-                print("s", self.headers)
                 response = await client.get(
                     self.base_url + self.coins_market_api,
                     headers=self.headers,
@@ -55,12 +77,18 @@ class CoinGeckoFetcher(CoinGeckoBaseModel):
 
 
 class SymbolCache(CoinGeckoBaseModel):
-    """ """
+    """
+    In-memory cache for mapping asset symbols (e.g., 'btc') to CoinGecko IDs
+    (e.g., 'bitcoin') using the /coins/list endpoint.
 
-    def __init__(self):
+    Attributes:
+        symbol_to_id (Dict[str, str]): Maps lowercase asset symbols to CoinGecko IDs.
+    """
+
+    def __init__(self, store_backend=None):
         super().__init__()
         # cache dict implementation
-        self.symbol_to_id: Dict[str, str] = {}
+        self.symbol_to_id: Dict[str, str] = store_backend or {}
         # api vars
         self.query_params = lambda page_num: {
             "vs_currency": "usd",
@@ -70,11 +98,16 @@ class SymbolCache(CoinGeckoBaseModel):
         }
 
     async def initialize(self):
-        """ """
+        """
+        Initializes the symbol cache by calling refresh(). Intended to be used once at startup.
+        """
         await self.refresh()
 
     async def refresh(self):
-        """ """
+        """
+        Calls the CoinGecko /coins/list endpoint and builds a symbol-to-ID mapping.
+        Only symbols with both 'symbol' and 'id' fields are included.
+        """
         try:
             async with httpx.AsyncClient() as client:
                 # for now, limit coins to the top 500 by market cap
@@ -100,7 +133,15 @@ class SymbolCache(CoinGeckoBaseModel):
             print(f"Failed to refresh cache with error: {e}")
 
     def get_id(self, symbol: str) -> Optional[str]:
-        """ """
+        """
+        Retrieves the CoinGecko ID for a given asset symbol.
+
+        Args:
+            symbol (str): Asset symbol (e.g., 'btc', 'eth').
+
+        Returns:
+            Optional[str]: Corresponding CoinGecko ID if found; otherwise None.
+        """
         coin_id = self.symbol_to_id.get(symbol.lower())
         if not coin_id:
             print(f"[SymbolCache] Warning: No CoinGecko ID found for symbol '{symbol}'")

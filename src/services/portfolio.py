@@ -1,8 +1,8 @@
 from typing import Dict, List
 
-from deps.coingecko import get_coingecko_fetcher, get_symbol_cache
+from deps.coingecko import get_market_data_cache
 from fetchers.coinbase import CoinbaseRequestHandler
-from fetchers.coingecko import SymbolCache
+from fetchers.coingecko import MarketDataCache
 from models.portfolio import CryptoAsset
 
 
@@ -14,44 +14,37 @@ async def get_portfolio() -> List[CryptoAsset]:
     Returns:
         A list of CryptoAsset objects with both Coinbase and CoinGecko data combined.
     """
-    cache = await get_symbol_cache()
+    cache = await get_market_data_cache()
     handler = CoinbaseRequestHandler()
     holdings = await handler.get_holdings()
-    return await enrich_holdings_with_prices(cache, holdings)
+    return await enrich_holdings(cache, holdings)
 
 
-async def enrich_holdings_with_prices(
-    cache: SymbolCache, raw_assets: List[Dict]
+async def enrich_holdings(
+    cache: MarketDataCache, raw_assets: List[Dict]
 ) -> List[CryptoAsset]:
     """
     Enriches a list of raw Coinbase assets with additional market metadata
     (e.g., price changes, market cap, volume, etc.) from CoinGecko.
 
     Args:
-        cache: A SymbolCache instance used to map symbols to CoinGecko IDs.
+        cache: A MarketDataCache instance used to map symbols to CoinGecko IDs, and IDs to comprehensive asset market data.
         raw_assets: A list of dicts representing raw asset data from Coinbase.
 
     Returns:
         A list of CryptoAsset instances with additional CoinGecko metadata.
     """
-    valid_ids = []
-    asset_to_id_map = {}
-
-    for asset in raw_assets:
-        symbol = asset["symbol"].lower()
-        cg_id = cache.get_id(symbol)
-        if cg_id:
-            valid_ids.append(cg_id)
-            asset_to_id_map[symbol] = cg_id
-
-    coingecko = await get_coingecko_fetcher()
-    price_metadata = await coingecko.get_price_metadata(valid_ids)
 
     enriched_assets = []
     for asset in raw_assets:
         symbol = asset["symbol"].lower()
-        cg_id = asset_to_id_map.get(symbol)
-        cg_meta = price_metadata.get(cg_id, {})
+        id = cache.get_id_from_symbol(symbol)
+        if id is None:
+            print(
+                f"Asset with symbol '{symbol}' not in the top {cache.page_limit * cache.number_pages} assets by market cap; not including in portfolio report."
+            )
+            continue
+        asset_md = cache.id_to_market_data[id]
 
         # --- Add all enriched fields from CoinGecko ---
         for key in [
@@ -82,9 +75,9 @@ async def enrich_holdings_with_prices(
             "price_change_percentage_1y_in_currency",
             "last_updated",
         ]:
-            if key in cg_meta:
+            if key in asset_md:
                 short_key = key.replace("_in_currency", "")
-                asset[short_key] = cg_meta[key]
+                asset[short_key] = asset_md[key]
 
         enriched_assets.append(CryptoAsset(**asset))
 

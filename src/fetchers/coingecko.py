@@ -27,6 +27,7 @@ class CoinGeckoBaseModel:
             "x-cg-demo-api-key": f"{self.api_key}",
         }
         self.page_limit = 250  # to start!
+        self.number_pages = 3  # to start!
 
 
 class CoinGeckoFetcher(CoinGeckoBaseModel):
@@ -76,7 +77,7 @@ class CoinGeckoFetcher(CoinGeckoBaseModel):
             return {}  # return empty dict if exception encountered
 
 
-class SymbolCache(CoinGeckoBaseModel):
+class MarketDataCache(CoinGeckoBaseModel):
     """
     In-memory cache for mapping asset symbols (e.g., 'btc') to CoinGecko IDs
     (e.g., 'bitcoin') using the /coins/list endpoint.
@@ -85,16 +86,18 @@ class SymbolCache(CoinGeckoBaseModel):
         symbol_to_id (Dict[str, str]): Maps lowercase asset symbols to CoinGecko IDs.
     """
 
-    def __init__(self, store_backend=None):
+    def __init__(self, store_backend=None, market_store_backend=None):
         super().__init__()
         # cache dict implementation
         self.symbol_to_id: Dict[str, str] = store_backend or {}
+        self.id_to_market_data: Dict[str, Dict] = market_store_backend or {}
         # api vars
         self.query_params = lambda page_num: {
             "vs_currency": "usd",
             "order": "market_cap_desc",
             "per_page": self.page_limit,
             "page": page_num,
+            "price_change_percentage": "24h,7d,14d,30d,200d,1y",
         }
 
     async def initialize(self):
@@ -111,7 +114,7 @@ class SymbolCache(CoinGeckoBaseModel):
         try:
             async with httpx.AsyncClient() as client:
                 # for now, limit coins to the top 500 by market cap
-                for page in range(1, 5):
+                for page in range(1, 4):
                     response = await client.get(
                         self.base_url + self.coins_market_api,
                         headers=self.headers,
@@ -128,11 +131,12 @@ class SymbolCache(CoinGeckoBaseModel):
                         coin_id = coin.get("id")
                         if symbol and coin_id and not symbol in self.symbol_to_id:
                             self.symbol_to_id[symbol] = coin_id
+                            self.id_to_market_data[coin_id] = {**coin}
 
         except Exception as e:
             print(f"Failed to refresh cache with error: {e}")
 
-    def get_id(self, symbol: str) -> Optional[str]:
+    def get_id_from_symbol(self, symbol: str) -> Optional[str]:
         """
         Retrieves the CoinGecko ID for a given asset symbol.
 

@@ -3,7 +3,7 @@ from typing import Dict, List
 from deps.coingecko import get_market_data_cache
 from fetchers.coinbase import CoinbaseRequestHandler
 from fetchers.coingecko import MarketDataCache
-from models.portfolio import CryptoAsset
+from models.portfolio_assets import CryptoAsset
 
 
 async def get_portfolio() -> List[CryptoAsset]:
@@ -38,47 +38,28 @@ async def enrich_holdings(
     enriched_assets = []
     for asset in raw_assets:
         symbol = asset["symbol"].lower()
-        id = cache.get_id_from_symbol(symbol)
-        if id is None:
+        cg_id = cache.get_id_from_symbol(symbol)
+        if cg_id is None:
             print(
-                f"Asset with symbol '{symbol}' not in the top {cache.page_limit * cache.number_pages} assets by market cap; not including in portfolio report."
+                f"Asset with symbol '{symbol}' not in the top {cache.page_limit * cache.num_pages} assets by market cap; skipping."
             )
             continue
-        asset_md = cache.id_to_market_data[id]
 
-        # --- Add all enriched fields from CoinGecko ---
-        for key in [
-            "image",
-            "market_cap",
-            "market_cap_rank",
-            "fully_diluted_valuation",
-            "total_volume",
-            "high_24h",
-            "low_24h",
-            "price_change_24h",
-            "price_change_percentage_24h",
-            "market_cap_change_24h",
-            "market_cap_change_percentage_24h",
-            "circulating_supply",
-            "total_supply",
-            "max_supply",
-            "ath",
-            "ath_change_percentage",
-            "ath_date",
-            "atl",
-            "atl_change_percentage",
-            "atl_date",
-            "price_change_percentage_7d_in_currency",
-            "price_change_percentage_14d_in_currency",
-            "price_change_percentage_30d_in_currency",
-            "price_change_percentage_200d_in_currency",
-            "price_change_percentage_1y_in_currency",
-            "last_updated",
-        ]:
-            if key in asset_md:
-                short_key = key.replace("_in_currency", "")
-                asset[short_key] = asset_md[key]
+        asset_md = cache.id_to_market_data[cg_id]
+        asset_md_dict = asset_md.dict()
+        merged = dict(asset)  # start with coinbase asset
 
-        enriched_assets.append(CryptoAsset(**asset))
+        # Clean up keys from asset_md and merge
+        for k, v in asset_md_dict.items():
+            cleaned_key = (
+                k.replace("_in_currency", "") if k.endswith("_in_currency") else k
+            )
+            if cleaned_key not in merged:  # avoid overwriting fields like "id"
+                merged[cleaned_key] = v
+
+        try:
+            enriched_assets.append(CryptoAsset(**merged))
+        except Exception as e:
+            print(f"Failed to parse CryptoAsset for {symbol}: {e}")
 
     return enriched_assets

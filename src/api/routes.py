@@ -2,7 +2,7 @@ from typing import List
 
 from fastapi import APIRouter, Query  # type: ignore
 
-from models.portfolio import CryptoAsset
+from models.portfolio_assets import CryptoAsset
 from services.portfolio import get_portfolio
 
 router = APIRouter()

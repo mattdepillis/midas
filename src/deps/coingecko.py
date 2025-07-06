@@ -16,6 +16,8 @@ async def get_market_data_cache() -> MarketDataCache:
     if _market_data_cache is None:
         _market_data_cache = MarketDataCache()
         await _market_data_cache.initialize()
+    else:
+        await _market_data_cache.maybe_refresh()
     return _market_data_cache
 
 

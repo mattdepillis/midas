@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from deps.coingecko import get_market_data_cache
 from fetchers.coinbase import CoinbaseRequestHandler
@@ -38,11 +38,8 @@ async def enrich_holdings(
     enriched_assets = []
     for asset in raw_assets:
         symbol = asset["symbol"].lower()
-        cg_id = cache.get_id_from_symbol(symbol)
+        cg_id = await resolve_cg_id(cache, symbol)
         if cg_id is None:
-            print(
-                f"Asset with symbol '{symbol}' not in the top {cache.page_limit * cache.num_pages} assets by market cap; skipping."
-            )
             continue
 
         asset_md = cache.id_to_market_data[cg_id]
@@ -63,3 +60,20 @@ async def enrich_holdings(
             print(f"Failed to parse CryptoAsset for {symbol}: {e}")
 
     return enriched_assets
+
+
+async def resolve_cg_id(cache: MarketDataCache, symbol: str) -> Optional[str]:
+    """ """
+    cg_id = cache.get_id_from_symbol(symbol)
+    if cg_id is not None:
+        return cg_id
+
+    print(
+        f"Asset with symbol '{symbol}' not in the top {cache.page_limit * cache.num_pages} assets. Trying fallback lookup."
+    )
+    fallback_id = await cache.get_asset_fallback(symbol)
+    if not fallback_id:
+        print(f"No fallback CoinGecko ID found for symbol: {symbol}")
+        return None
+
+    return fallback_id

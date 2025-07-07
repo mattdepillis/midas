@@ -45,12 +45,27 @@ class CoinGeckoFetcher(CoinGeckoBaseModel):
     def __init__(self):
         super().__init__()
         # api vars
-        self.query_params = lambda page_num: {
+        self.timeframes = ["7d", "14d", "30d", "200d", "1y"]
+        self.query_params_specific_symbols = lambda symbols: {
+            "vs_currency": "usd",
+            "order": "market_cap_desc",  # to ensure that we grab the most relevant
+            "symbols": symbols,
+            "price_change_percentage": ",".join(self.timeframes),
+        }
+        self.query_params_top_assets = lambda page_num: {
             "vs_currency": "usd",
             "order": "market_cap_desc",
             "per_page": self.page_limit,
             "page": page_num,
-            "price_change_percentage": "24h,7d,14d,30d,200d,1y",
+            "price_change_percentage": ",".join(self.timeframes),
+        }
+
+    def _extract_clean_price_changes(self, coin: dict) -> dict:
+        return {
+            f"price_change_percentage_{t}": coin.get(
+                f"price_change_percentage_{t}_in_currency"
+            )
+            for t in self.timeframes
         }
 
     async def get_top_assets(self) -> Tuple[Dict[str, str], Dict[str, dict]]:
@@ -67,7 +82,7 @@ class CoinGeckoFetcher(CoinGeckoBaseModel):
                     response = await client.get(
                         self.base_url + self.coins_market_api,
                         headers=self.headers,
-                        params=self.query_params(page),
+                        params=self.query_params_top_assets(page),
                     )
 
                     if response.status_code != 200:
@@ -82,21 +97,7 @@ class CoinGeckoFetcher(CoinGeckoBaseModel):
                             symbol_to_id[symbol] = coin_id
                             cleaned_data = {
                                 **coin,
-                                "price_change_percentage_7d": coin.get(
-                                    "price_change_percentage_7d_in_currency"
-                                ),
-                                "price_change_percentage_14d": coin.get(
-                                    "price_change_percentage_14d_in_currency"
-                                ),
-                                "price_change_percentage_30d": coin.get(
-                                    "price_change_percentage_30d_in_currency"
-                                ),
-                                "price_change_percentage_200d": coin.get(
-                                    "price_change_percentage_200d_in_currency"
-                                ),
-                                "price_change_percentage_1y": coin.get(
-                                    "price_change_percentage_1y_in_currency"
-                                ),
+                                **self._extract_clean_price_changes(coin),
                             }
                             id_to_market_data[coin_id] = MarketData(**cleaned_data)
 
@@ -107,6 +108,41 @@ class CoinGeckoFetcher(CoinGeckoBaseModel):
                 f"Failed to fetch top {self.page_limit * self.num_pages} with error: {e}"
             )
             return ({}, {})
+
+    async def get_coin_market_data_by_symbol(self, symbols: List[str]) -> bool:
+        """ """
+        try:
+            async with httpx.AsyncClient() as client:
+                # join symbols together in comma-separated string
+                symbol_str = ",".join(symbols)
+                response = await client.get(
+                    self.base_url + self.coins_market_api,
+                    headers=self.headers,
+                    params=self.query_params_specific_symbols(symbol_str),
+                )
+
+                if response.status_code != 200:
+                    raise Exception(
+                        f"Failed to fetch list of coins + symbols: {response.status_code} {response.text}"
+                    )
+
+                coin = response.json()[
+                    0
+                ]  # for now, assume this is only called for one coin at a time
+                coin_id = coin.get("id")
+                cleaned_data = {
+                    **coin,
+                    **self._extract_clean_price_changes(coin),
+                }
+                coin_market_data = MarketData(**cleaned_data)
+
+                return coin_id, coin_market_data
+
+        except Exception as e:
+            print(
+                f"Failed to fetch data for coins with symbols '{symbol_str}' with error: {e}"
+            )
+            return (None, {})
 
 
 class MarketDataCache(CoinGeckoBaseModel):
@@ -166,3 +202,15 @@ class MarketDataCache(CoinGeckoBaseModel):
         if not coin_id:
             print(f"[SymbolCache] Warning: No CoinGecko ID found for symbol '{symbol}'")
         return coin_id
+
+    async def get_asset_fallback(self, symbol: str) -> Optional[str]:
+        """ """
+        (asset_id, market_data) = await self._fetcher.get_coin_market_data_by_symbol(
+            list(symbol)
+        )
+        if asset_id is not None:
+            self.symbol_to_id[symbol] = asset_id
+            self.id_to_market_data[asset_id] = market_data
+            return asset_id
+        print(f"Could not fetch market data for asset with symbol '{symbol}'.")
+        return None

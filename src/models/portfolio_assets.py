@@ -3,8 +3,6 @@ from typing import Optional
 
 from models.market_data import MarketData
 
-# from pydantic import BaseModel  # type: ignore
-
 
 class CryptoAsset(MarketData):
     id: str

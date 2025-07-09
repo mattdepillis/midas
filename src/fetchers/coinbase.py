@@ -7,17 +7,31 @@ from coinbase import jwt_generator
 
 
 class CoinbaseRequestHandler:
-    """Handles authenticated Coinbase API requests to fetch account balances and asset prices."""
+    """
+    Handles authenticated Coinbase API requests to fetch account balances and
+    spot prices for crypto assets.
+
+    Provides:
+        - Authenticated access to the /accounts and /prices endpoints
+        - Construction of a structured portfolio with enriched USD values
+        - Support for staked assets and APY extraction
+
+    Requires:
+        - COINBASE_API_KEY (env var)
+        - COINBASE_API_SECRET_PATH (path to secret for signing requests)
+    """
 
     def __init__(self):
-        # vars - secrets
+        # Authentication config
         self.api_key = os.getenv("COINBASE_API_KEY")
         self.key_path = os.getenv("COINBASE_API_SECRET_PATH")
-        # vars - apis
+
+        # API endpoints
         self.base_url = "https://api.coinbase.com"
         self.accounts_api = "/api/v2/accounts"
         self.assets_api = lambda symbol: f"/v2/prices/{symbol}-USD/spot"
-        # vars - headers
+
+        # Header constructor for authenticated requests
         self.headers = lambda token: {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
@@ -25,30 +39,38 @@ class CoinbaseRequestHandler:
 
     @property
     def api_secret(self) -> str:
+        """
+        Reads the API secret from a file path defined in COINBASE_API_SECRET_PATH.
+
+        Returns:
+            The API secret as a string.
+        """
         with open(self.key_path, "r") as f:
             return f.read()
 
     def build_jwt_for(self, path: str, method: str = "GET") -> str:
-        """Generates a JWT token for a specific API path and HTTP method.
+        """
+        Generates a JWT token for a specific Coinbase API request.
 
         Args:
-            path: The API endpoint path.
-            method: The HTTP method (default is "GET").
+            path: The request path (e.g., "/api/v2/accounts").
+            method: HTTP method (default "GET").
 
         Returns:
-            A signed JWT string for request authentication.
+            A signed JWT string for authentication.
         """
         jwt_uri = jwt_generator.format_jwt_uri(method, path)
         return jwt_generator.build_rest_jwt(jwt_uri, self.api_key, self.api_secret)
 
     async def _get_all_accounts(self) -> List[Dict[str, Any]]:
-        """Fetches all account records asynchronously from Coinbase v2 API.
+        """
+        Fetches all account records from the Coinbase v2 API.
 
         Returns:
-            A list of account dictionaries from the /v2/accounts endpoint.
+            A list of account dictionaries.
 
         Raises:
-            Exception: If the API call fails.
+            Exception if the API call fails.
         """
         async with httpx.AsyncClient() as client:
             response = await client.get(
@@ -64,13 +86,14 @@ class CoinbaseRequestHandler:
             return response.json().get("data", [])
 
     async def get_asset_price(self, symbol: str) -> float:
-        """Fetches the current USD spot price for a given asset symbol.
+        """
+        Fetches the current USD spot price for a given crypto asset.
 
         Args:
-            symbol: The crypto asset symbol (e.g., 'SOL').
+            symbol: Asset symbol (e.g., "ETH", "BTC").
 
         Returns:
-            The spot price as a float. Returns 0.0 on failure.
+            The asset's USD spot price as a float, or 0.0 if unavailable.
         """
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
@@ -86,13 +109,14 @@ class CoinbaseRequestHandler:
     async def _construct_portfolio(
         self, accounts: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        """Transforms raw account data into a structured portfolio with price info.
+        """
+        Converts raw account records into a structured portfolio with price enrichment.
 
         Args:
-            accounts: A list of raw account records from the API.
+            accounts: A list of account dicts from the Coinbase API.
 
         Returns:
-            A list of dictionaries, each representing a portfolio asset.
+            A sorted list of enriched asset dictionaries, descending by USD value.
         """
 
         async def process_account(acct):
@@ -124,10 +148,15 @@ class CoinbaseRequestHandler:
         )
 
     async def get_holdings(self) -> List[Dict[str, Any]]:
-        """Main public method to fetch and format portfolio holdings.
+        """
+        Public method to retrieve the user's full portfolio from Coinbase.
 
         Returns:
-            A list of enriched holdings, including USD values and staking status.
+            A list of enriched asset holdings, each with:
+              - id, name, symbol
+              - balance and usd_price
+              - usd_value
+              - staking status and APY (if applicable)
         """
         accounts = await self._get_all_accounts()
         return await self._construct_portfolio(accounts)
